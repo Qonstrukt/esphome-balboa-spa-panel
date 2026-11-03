@@ -16,16 +16,16 @@
       <text x="20" y="142"><tspan font-weight="bold">3</tspan>  RS-485 A (D-)</text>
       <text x="20" y="162"><tspan font-weight="bold">4</tspan>  GND (return)</text>
     </g>
-    <!-- connector drawing: Micro-Fit 3.0 in a 2 x 2 block -->
-    <rect x="90" y="176" width="70" height="62" rx="6" fill="#dddddd" stroke="#777"/>
-    <path d="M 100 176 L 108 170 L 142 170 L 150 176" fill="#bbb" stroke="#777"/>
-    <g font-size="12" font-weight="bold" fill="#111" text-anchor="middle">
-      <rect x="98" y="184" width="22" height="22" rx="3" fill="#fff" stroke="#777"/><text x="109" y="200">1</text>
-      <rect x="130" y="184" width="22" height="22" rx="3" fill="#fff" stroke="#777"/><text x="141" y="200">2</text>
-      <rect x="98" y="210" width="22" height="22" rx="3" fill="#fff" stroke="#777"/><text x="109" y="226">3</text>
-      <rect x="130" y="210" width="22" height="22" rx="3" fill="#fff" stroke="#777"/><text x="141" y="226">4</text>
+    <!-- connector drawing: the socket on the board, seen from the front, clip slot on top -->
+    <rect x="80" y="176" width="90" height="62" rx="6" fill="#dddddd" stroke="#777"/>
+    <rect x="112" y="170" width="26" height="8" fill="#bbb" stroke="#777"/>
+    <g font-size="10" font-weight="bold" fill="#111" text-anchor="middle">
+      <rect x="88" y="184" width="34" height="22" rx="3" fill="#fff" stroke="#777"/><text x="105" y="199">4 GND</text>
+      <rect x="128" y="184" width="34" height="22" rx="3" fill="#fff" stroke="#777"/><text x="145" y="199">3 A</text>
+      <rect x="88" y="210" width="34" height="22" rx="3" fill="#fff" stroke="#777"/><text x="105" y="225">2 B</text>
+      <rect x="128" y="210" width="34" height="22" rx="3" fill="#fff" stroke="#777"/><text x="145" y="225">1 12V</text>
     </g>
-    <text x="125" y="246" text-anchor="middle" fill="#555" font-size="11">2 x 2 block, numbers moulded into the housing</text>
+    <text x="125" y="246" text-anchor="middle" fill="#555" font-size="11">board socket, clip slot up; the plug face is mirrored</text>
   </g>
 
   <!-- RS485 unit -->
@@ -87,6 +87,6 @@
   <g font-size="12" fill="#222">
     <text x="24" y="378"><tspan font-weight="bold">Polarity:</tspan> with A and B swapped the spa panel shows NO COMM and nothing works; swap them and it recovers.</text>
     <text x="24" y="398"><tspan font-weight="bold">Power:</tspan> J34 pin 1 also feeds the unit's 12 V input, so the panel runs without USB. Switch A7 off on the pack when a WiFi module uses the other port.</text>
-    <text x="24" y="418"><tspan font-weight="bold">Numbers:</tspan> pin functions from the Balboa Worldwide App wiki; check them against your board's silkscreen before connecting.</text>
+    <text x="24" y="418"><tspan font-weight="bold">Numbers:</tspan> functions from the Balboa Worldwide App wiki; GND and 12 V positions confirmed on a BP200G1. Sources disagree on which of the pair is A, so swap on NO COMM.</text>
   </g>
 </svg>

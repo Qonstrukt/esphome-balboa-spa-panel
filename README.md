@@ -32,14 +32,14 @@ Try the layout in your browser: [qonstrukt.github.io/esphome-balboa-spa-panel](h
 
 The spa pack's J34 (or J35) connector is a 4-pin Molex Micro-Fit 3.0 that carries the RS485 pair and 12 V. All four wires go to the RS485 unit: A and B to its bus terminals, 12 V and ground to its power input, which feeds the panel through the Grove port's 5 V pin.
 
-| J34 pin | Function | RS485 unit terminal |
-|---|---|---|
-| 1 | +12 to 15 V supply | 12V in |
-| 2 | RS-485 B (D+) | B |
-| 3 | RS-485 A (D-) | A |
-| 4 | GND (return) | GND |
+| J34 pin | Position on the board socket, clip slot up | Function | RS485 unit terminal |
+|---|---|---|---|
+| 1 | bottom right | +12 to 15 V supply | 12V in |
+| 2 | bottom left | RS-485 B (D+) | B |
+| 3 | top right | RS-485 A (D-) | A |
+| 4 | top left | GND (return) | GND |
 
-Pin functions are from the [Balboa Worldwide App wiki](https://github.com/ccutrer/balboa_worldwide_app/wiki); check them against your board before connecting. With A and B swapped the spa's own panel shows NO COMM until you swap them back. If a Balboa WiFi module occupies the other port, keep switch A7 on the pack off as its tech sheet asks.
+Pin functions are from the [Balboa Worldwide App wiki](https://github.com/ccutrer/balboa_worldwide_app/wiki); the positions follow the plug-face drawing in [jhenkens/esphome-balboa-spa](https://github.com/jhenkens/esphome-balboa-spa/blob/main/docs/HARDWARE.md), mirrored for the socket, and the GND and 12 V corners were confirmed on a BP200G1. Measure before connecting: 12 V against ground is easy to find with a meter. Sources disagree on which of the middle pair is A, which does no harm: with A and B swapped the spa's own panel shows NO COMM until you swap them back. If a Balboa WiFi module occupies the other port, keep switch A7 on the pack off as its tech sheet asks.
 
 Nothing is connected to the Tough's own RS485 screw terminal: that port has a 120 Ω termination resistor that interferes with its one-transistor direction circuit, which made communication unreliable in this setup. The external unit has the same circuit without termination and works.
 
