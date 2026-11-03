@@ -4,6 +4,8 @@ An outdoor touch panel for a Balboa-controlled hot tub, built with [ESPHome](htt
 
 The whole configuration is one file, [jacuzzi.yaml](jacuzzi.yaml).
 
+It was built around a Balboa BP200G1 pack and a W'eau WSH-005 heat pump, but neither is a hard requirement: the spa side works with any Balboa board that has the same RS485 connector (the `balboa_spa` component speaks the common Balboa protocol), and the heat pump side only needs a `climate` entity in Home Assistant, which most pool heat pump integrations provide.
+
 | Overview | Weather |
 |---|---|
 | ![Overview page](docs/screenshots/overview.png) | ![Weather page](docs/screenshots/weather.png) |
@@ -18,8 +20,8 @@ Try the layout in your browser: [qonstrukt.github.io/esphome-balboa-spa-panel](h
 |---|---|---|
 | [M5Stack Tough](https://docs.m5stack.com/en/core/tough) | Panel: ESP32, 320x240 touch screen, IP54 case | Board, power, display and touch come from the [esphome-m5tough](https://github.com/Qonstrukt/esphome-m5tough) package |
 | [M5Stack RS485 unit (U034)](https://docs.m5stack.com/en/unit/rs485) | RS485 to the spa, and the panel's power supply | On Grove port C (blue, the UART port): TX GPIO14, RX GPIO13 |
-| Balboa BP200G1 spa pack | The spa controller | RS485 on connector J34, which also carries 12 V |
-| W'eau WSH-005 heat pump | Pool heat pump, controlled through Home Assistant | Any `climate` entity works |
+| Balboa BP200G1 spa pack | The spa controller | RS485 on connector J34, which also carries 12 V. Any Balboa pack with the same connector should work |
+| W'eau WSH-005 heat pump | Pool heat pump, controlled through Home Assistant | Any heat pump that shows up as a `climate` entity in HA works |
 | Home Assistant | Time, weather, forecast, heat pump control | Weather entity: any `weather` integration |
 
 ### Wiring
