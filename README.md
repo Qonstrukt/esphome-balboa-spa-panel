@@ -74,6 +74,13 @@ tools/esphome-sync.py install     # compile and flash over the air
 
 [docs/layout-mockup.html](docs/layout-mockup.html) is the clickable browser mock-up of the LVGL layout, useful for trying layout changes before a compile. `?page=weather&shot=1` opens it on one page in screenshot mode; the images above were made that way with headless Chrome at 640x480.
 
+## Inspiration
+
+Two projects that got this one started:
+
+- [dhWasabi/M5Tough-BalboaSpa-esphome](https://github.com/dhWasabi/M5Tough-BalboaSpa-esphome): a Balboa spa controller on the M5Stack Tough with ESPHome, the proof that this combination works.
+- [Two M5Stack displays, one ESPHome project](https://tech.scargill.net/two-m5stack-displays-one-esphome-project/) by Peter Scargill: getting the M5Stack displays and touch going under ESPHome.
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE).
