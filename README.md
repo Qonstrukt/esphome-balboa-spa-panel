@@ -24,6 +24,8 @@ Try the layout in your browser: [qonstrukt.github.io/esphome-balboa-spa-panel](h
 | W'eau WSH-005 heat pump | Pool heat pump, controlled through Home Assistant | Any heat pump that shows up as a `climate` entity in HA works |
 | Home Assistant | Time, weather, forecast, heat pump control | Weather entity: any `weather` integration |
 
+<img src="https://static-cdn.m5stack.com/resource/docs/products/core/tough/tough_06.webp" alt="M5Stack Tough" width="240" align="right">
+
 ### Wiring
 
 The spa's J34 connector carries A, B, 12 V and ground. A and B go to the RS485 unit; its 12 V input feeds the panel through the Grove port's 5 V pin. Nothing is connected to the Tough's own RS485 screw terminal: that port has a 120 Ω termination resistor that interferes with its one-transistor direction circuit, which made communication unreliable in this setup. The external unit has the same circuit without termination and works.
@@ -35,6 +37,8 @@ The spa's J34 connector carries A, B, 12 V and ground. A and B go to the RS485 u
 | RS485 TX | GPIO14 | `uart: tx_pin` |
 | RS485 RX | GPIO13 | `uart: rx_pin` |
 | Touch interrupt, I2C, SPI, backlight | internal | from the m5tough package |
+
+The full pin map of the Tough, with the Grove ports, the RS485 terminal and the internal buses, is in the [esphome-m5tough pinout](https://github.com/Qonstrukt/esphome-m5tough/blob/main/docs/m5tough-pinout.svg). Photo: M5Stack.
 
 ## Components
 
