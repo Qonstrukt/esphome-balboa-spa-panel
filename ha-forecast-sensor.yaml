@@ -8,7 +8,8 @@
 #
 # Add this under `template:` in configuration.yaml (or a file included from it),
 # then reload template entities (Developer tools > YAML > Template entities).
-# Entity id: sensor.ulenpas_forecast_hourly
+# Entity id: sensor.spa_forecast_hourly (set it as forecast_entity in secrets.yaml)
+# Replace weather.home below with your weather entity.
 
 template:
   - triggers:
@@ -17,26 +18,26 @@ template:
       - trigger: homeassistant
         event: start
       - trigger: state
-        entity_id: weather.ulenpas_weather
+        entity_id: weather.home
     actions:
       - action: weather.get_forecasts
         data:
           type: hourly
         target:
-          entity_id: weather.ulenpas_weather
+          entity_id: weather.home
         response_variable: fc
       - variables:
           hourly: >-
             {% set ns = namespace(items=[]) %}
-            {% for e in fc['weather.ulenpas_weather'].forecast %}
+            {% for e in fc['weather.home'].forecast %}
               {% if as_datetime(e.datetime) > now() and ns.items | count < 6 %}
                 {% set ns.items = ns.items + [e] %}
               {% endif %}
             {% endfor %}
             {{ ns.items }}
     sensor:
-      - name: "Ulenpas forecast hourly"
-        unique_id: ulenpas_forecast_hourly
+      - name: "Spa forecast hourly"
+        unique_id: spa_forecast_hourly
         icon: mdi:clock-outline
         state: "{{ hourly | count }}"
         attributes:

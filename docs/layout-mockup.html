@@ -1,4 +1,4 @@
-<title>Jacuzzi Layout v3</title>
+<title>Balboa spa panel layout</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -32,10 +32,14 @@
   .note { font-size: 12px; color: var(--muted); line-height: 1.45; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .hit { cursor: pointer; }
+  html.shot, html.shot body { margin: 0; padding: 0; background: #000; }
+  html.shot h1, html.shot .sub, html.shot .hint, html.shot .controls { display: none; }
+  html.shot .bench { display: block; }
+  html.shot .screen-wrap { border: 0; border-radius: 0; }
 </style>
 
-<h1>Jacuzzi Layout v3</h1>
-<p class="sub">Alternative to v2: a 56 px nav bar with four full-width tap zones (overview, weather, spa heater, heat pump), and an overview where only Jets and Lights look like buttons. Status is shown as plain icons and readouts. Tap the nav icons, tiles and buttons on the panel itself; the strip on the right sets the spa and heat pump state the device would receive.</p>
+<h1>Balboa spa panel layout</h1>
+<p class="sub">Clickable mock-up of the LVGL layout in <a href="https://github.com/Qonstrukt/esphome-balboa-spa-panel">esphome-balboa-spa-panel</a>: a 56 px nav bar with four full-width tap zones (overview, weather, spa heater, heat pump), and an overview where only Jets and Lights look like buttons. Status is shown as plain icons and readouts. Tap the nav icons, tiles and buttons on the panel itself; the strip on the right sets the spa and heat pump state the device would receive.</p>
 
 <div class="bench">
   <div class="stage">
@@ -76,7 +80,13 @@
   const svg = $('screen');
   const NS = 'http://www.w3.org/2000/svg';
   const C = { cool: '#3399ff', heat: '#f44336', tile: '#1c1c1c', bar: '#111111', dim: '#8a8a8a', white: '#ffffff', black: '#000000' };
-  const state = { page: 'overview' };
+  // ?page=weather&shot=1 opens on that page in screenshot mode: only the 320x240 panel at 2x, no controls
+  const params = new URLSearchParams(location.search);
+  const state = { page: params.get('page') || 'overview' };
+  if (params.get('shot')) {
+    document.documentElement.classList.add('shot');
+    document.getElementById('zoom').value = '2';
+  }
 
   function el(name, attrs, parent) {
     const e = document.createElementNS(NS, name);

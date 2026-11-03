@@ -13,8 +13,9 @@ substitutions:
   hostname: jacuzzi
   friendly_name: "Balboa Jacuzzi"
   
-  weather_entity: weather.ulenpas_weather
-  forecast_entity: sensor.ulenpas_forecast_hourly   # template sensor in HA, see ha-forecast-sensor.yaml
+  # Entity ids live in secrets.yaml (see secrets.yaml.example) so this file stays site independent
+  weather_entity: !secret weather_entity       # a weather.* entity
+  forecast_entity: !secret forecast_entity     # the template sensor from ha-forecast-sensor.yaml
   wind_unit: "km/h"                                  # wind_speed_unit of the weather entity
   heatpump_entity: climate.w_eau_wsh_005
 

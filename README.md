@@ -2,7 +2,15 @@
 
 An outdoor touch panel for a Balboa-controlled hot tub, built with [ESPHome](https://esphome.io) and Home Assistant. It talks to the spa pack over RS485, shows the water temperature, the weather and the heat pump, and lets you control the heater, jets, lights and heat pump from the terrace without reaching for a phone.
 
-The whole configuration is one file, [jacuzzi.yaml](jacuzzi.yaml). A clickable mock-up of the screens is in [docs/layout-mockup.html](docs/layout-mockup.html).
+The whole configuration is one file, [jacuzzi.yaml](jacuzzi.yaml).
+
+| Overview | Weather |
+|---|---|
+| ![Overview page](docs/screenshots/overview.png) | ![Weather page](docs/screenshots/weather.png) |
+| **Spa heater** | **Heat pump** |
+| ![Spa heater page](docs/screenshots/spa.png) | ![Heat pump page](docs/screenshots/hp.png) |
+
+Try the layout in your browser: [qonstrukt.github.io/esphome-balboa-spa-panel](https://qonstrukt.github.io/esphome-balboa-spa-panel/), a clickable mock-up of the four pages with sliders for the spa and weather state.
 
 ## Hardware
 
@@ -49,9 +57,9 @@ Colours, entity ids, the idle timeout, the in-use threshold and the circulation 
 
 ## Home Assistant setup
 
-1. **Secrets**: copy [secrets.yaml.example](secrets.yaml.example) to `secrets.yaml` in the ESPHome config folder and fill it in.
-2. **Entities**: set `weather_entity` and `heatpump_entity` in the substitutions.
-3. **Hourly forecast**: weather entities no longer carry a forecast attribute, so add the trigger-based template sensor from [ha-forecast-sensor.yaml](ha-forecast-sensor.yaml) to your HA configuration (under `template:`) and reload template entities. Set `forecast_entity` to its entity id.
+1. **Secrets**: copy [secrets.yaml.example](secrets.yaml.example) to `secrets.yaml` in the ESPHome config folder and fill it in. Besides WiFi and the API key it holds the ids of your weather entity and the forecast sensor, so the YAML itself stays site independent.
+2. **Heat pump**: set `heatpump_entity` in the substitutions to your heat pump's `climate` entity.
+3. **Hourly forecast**: weather entities no longer carry a forecast attribute, so add the trigger-based template sensor from [ha-forecast-sensor.yaml](ha-forecast-sensor.yaml) to your HA configuration (under `template:`), replace `weather.home` with your weather entity, and reload template entities. Its entity id goes into `forecast_entity` in secrets.yaml.
 4. **Actions**: in the HA ESPHome integration, open the device's options and enable "Allow the device to perform Home Assistant actions". The heat pump buttons and the circulation rule need it.
 
 ## Tools
@@ -64,7 +72,7 @@ tools/esphome-sync.py push        # upload jacuzzi.yaml and validate it in the b
 tools/esphome-sync.py install     # compile and flash over the air
 ```
 
-[docs/layout-mockup.html](docs/layout-mockup.html) is a clickable browser mock-up of the LVGL layout, useful for trying layout changes before a compile.
+[docs/layout-mockup.html](docs/layout-mockup.html) is the clickable browser mock-up of the LVGL layout, useful for trying layout changes before a compile. `?page=weather&shot=1` opens it on one page in screenshot mode; the images above were made that way with headless Chrome at 640x480.
 
 ## Licence
 
