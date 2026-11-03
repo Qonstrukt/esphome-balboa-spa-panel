@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" width="1000" height="440" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>Wiring: Balboa J34 to the M5 RS485 unit to the M5Stack Tough</title>
+  <rect width="1000" height="440" fill="#ffffff"/>
+  <text x="24" y="34" font-size="20" font-weight="bold" fill="#111">Wiring: Balboa spa pack to the panel</text>
+  <text x="24" y="54" fill="#555">Four wires from the spa pack: the RS485 pair plus 12 V, which also powers the panel. The Tough's own RS485 terminal is not used.</text>
+
+  <!-- Balboa pack -->
+  <g transform="translate(40 90)">
+    <rect x="0" y="0" width="250" height="250" rx="10" fill="#f3f3f3" stroke="#999"/>
+    <text x="125" y="26" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">Balboa BP spa pack</text>
+    <text x="125" y="44" text-anchor="middle" fill="#555" font-size="12">J34 (or J35), Molex Micro-Fit 3.0, 4 pin</text>
+    <text x="20" y="80" font-weight="bold" fill="#111">Pins</text>
+    <g font-size="12.5" fill="#222">
+      <text x="20" y="102"><tspan font-weight="bold">1</tspan>  +12 to 15 V supply</text>
+      <text x="20" y="122"><tspan font-weight="bold">2</tspan>  RS-485 B (D+)</text>
+      <text x="20" y="142"><tspan font-weight="bold">3</tspan>  RS-485 A (D-)</text>
+      <text x="20" y="162"><tspan font-weight="bold">4</tspan>  GND (return)</text>
+    </g>
+    <!-- connector drawing: 4 pins in a row, pin 1 at the latch side -->
+    <rect x="55" y="180" width="140" height="50" rx="6" fill="#dddddd" stroke="#777"/>
+    <path d="M 55 180 L 70 172 L 180 172 L 195 180" fill="#bbb" stroke="#777"/>
+    <g font-size="12" font-weight="bold" fill="#111" text-anchor="middle">
+      <rect x="66" y="190" width="22" height="30" rx="3" fill="#fff" stroke="#777"/><text x="77" y="210">1</text>
+      <rect x="98" y="190" width="22" height="30" rx="3" fill="#fff" stroke="#777"/><text x="109" y="210">2</text>
+      <rect x="130" y="190" width="22" height="30" rx="3" fill="#fff" stroke="#777"/><text x="141" y="210">3</text>
+      <rect x="162" y="190" width="22" height="30" rx="3" fill="#fff" stroke="#777"/><text x="173" y="210">4</text>
+    </g>
+    <text x="125" y="244" text-anchor="middle" fill="#555" font-size="11">pin numbers are moulded into the Micro-Fit housing</text>
+  </g>
+
+  <!-- RS485 unit -->
+  <g transform="translate(400 90)">
+    <rect x="0" y="0" width="220" height="250" rx="10" fill="#f3f3f3" stroke="#999"/>
+    <text x="110" y="26" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">M5 RS485 unit (U034)</text>
+    <text x="110" y="44" text-anchor="middle" fill="#555" font-size="12">auto-direction SP485, no termination</text>
+    <text x="20" y="80" font-weight="bold" fill="#111">Screw terminals</text>
+    <g font-size="12.5" fill="#222">
+      <text x="20" y="102">12V in</text>
+      <text x="20" y="122">B</text>
+      <text x="20" y="142">A</text>
+      <text x="20" y="162">GND</text>
+    </g>
+    <text x="20" y="196" font-weight="bold" fill="#111">Grove socket</text>
+    <g font-size="12.5" fill="#222">
+      <text x="20" y="218">GND · 5 V out · RX · TX</text>
+      <text x="20" y="236" fill="#555">12 V in is stepped down to 5 V</text>
+    </g>
+  </g>
+
+  <!-- Tough -->
+  <g transform="translate(730 90)">
+    <rect x="0" y="0" width="230" height="250" rx="10" fill="#f5a623" stroke="#c77d00" stroke-width="2"/>
+    <text x="115" y="26" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">M5Stack Tough</text>
+    <text x="115" y="44" text-anchor="middle" fill="#3b2a00" font-size="12">Grove port C (blue, UART)</text>
+    <rect x="86" y="62" width="58" height="36" rx="5" fill="#1a73e8"/>
+    <text x="115" y="86" text-anchor="middle" fill="#fff" font-weight="bold" font-size="16">C</text>
+    <g font-size="12.5" fill="#111">
+      <text x="24" y="130"><tspan font-weight="bold">GND</tspan></text>
+      <text x="24" y="150"><tspan font-weight="bold">5 V</tspan>  powers the Tough</text>
+      <text x="24" y="170"><tspan font-weight="bold">G14</tspan>  UART TX (to unit RX)</text>
+      <text x="24" y="190"><tspan font-weight="bold">G13</tspan>  UART RX (from unit TX)</text>
+    </g>
+    <text x="24" y="222" fill="#3b2a00" font-size="11">uart: tx_pin GPIO14, rx_pin GPIO13</text>
+    <text x="24" y="238" fill="#3b2a00" font-size="11">115200 baud, 8N1</text>
+  </g>
+
+  <!-- wires pack -> unit, one row each -->
+  <g stroke-width="2.5" fill="none">
+    <path d="M 290 188 L 400 188" stroke="#d0021b"/>
+    <path d="M 290 208 L 400 208" stroke="#1a73e8"/>
+    <path d="M 290 228 L 400 228" stroke="#2e7d32"/>
+    <path d="M 290 248 L 400 248" stroke="#222"/>
+  </g>
+  <text x="345" y="176" text-anchor="middle" fill="#555" font-size="11">4 wires, twisted</text>
+
+  <!-- Grove cable unit -> tough -->
+  <g stroke-width="2.5" fill="none">
+    <path d="M 620 300 L 730 300" stroke="#222"/>
+    <path d="M 620 310 L 730 310" stroke="#d0021b"/>
+    <path d="M 620 320 L 730 320" stroke="#e6b800"/>
+    <path d="M 620 330 L 730 330" stroke="#999"/>
+  </g>
+  <text x="675" y="290" text-anchor="middle" fill="#555" font-size="11">Grove cable, 4 wires</text>
+  <text x="675" y="350" text-anchor="middle" fill="#555" font-size="11">black GND · red 5 V · yellow · white</text>
+
+  <!-- notes -->
+  <g font-size="12" fill="#222">
+    <text x="24" y="378"><tspan font-weight="bold">Polarity:</tspan> with A and B swapped the spa panel shows NO COMM and nothing works; swap them and it recovers.</text>
+    <text x="24" y="398"><tspan font-weight="bold">Power:</tspan> J34 pin 1 also feeds the unit's 12 V input, so the panel runs without USB. Switch A7 off on the pack when a WiFi module uses the other port.</text>
+    <text x="24" y="418"><tspan font-weight="bold">Numbers:</tspan> pin functions from the Balboa Worldwide App wiki; check them against your board's silkscreen before connecting.</text>
+  </g>
+</svg>

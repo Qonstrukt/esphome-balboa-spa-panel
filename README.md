@@ -28,7 +28,20 @@ Try the layout in your browser: [qonstrukt.github.io/esphome-balboa-spa-panel](h
 
 ### Wiring
 
-The spa's J34 connector carries A, B, 12 V and ground. A and B go to the RS485 unit; its 12 V input feeds the panel through the Grove port's 5 V pin. Nothing is connected to the Tough's own RS485 screw terminal: that port has a 120 Ω termination resistor that interferes with its one-transistor direction circuit, which made communication unreliable in this setup. The external unit has the same circuit without termination and works.
+![Wiring from the Balboa J34 connector through the RS485 unit to the Tough](docs/wiring.svg)
+
+The spa pack's J34 (or J35) connector is a 4-pin Molex Micro-Fit 3.0 that carries the RS485 pair and 12 V. All four wires go to the RS485 unit: A and B to its bus terminals, 12 V and ground to its power input, which feeds the panel through the Grove port's 5 V pin.
+
+| J34 pin | Function | RS485 unit terminal |
+|---|---|---|
+| 1 | +12 to 15 V supply | 12V in |
+| 2 | RS-485 B (D+) | B |
+| 3 | RS-485 A (D-) | A |
+| 4 | GND (return) | GND |
+
+Pin functions are from the [Balboa Worldwide App wiki](https://github.com/ccutrer/balboa_worldwide_app/wiki); check them against your board before connecting. With A and B swapped the spa's own panel shows NO COMM until you swap them back. If a Balboa WiFi module occupies the other port, keep switch A7 on the pack off as its tech sheet asks.
+
+Nothing is connected to the Tough's own RS485 screw terminal: that port has a 120 Ω termination resistor that interferes with its one-transistor direction circuit, which made communication unreliable in this setup. The external unit has the same circuit without termination and works.
 
 ### Which pins
 
