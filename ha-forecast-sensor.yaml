@@ -1,0 +1,50 @@
+# Home Assistant: hourly forecast for the jacuzzi panel.
+#
+# Weather entities no longer carry a forecast attribute, so this trigger based
+# template sensor calls weather.get_forecasts every 15 minutes and publishes the
+# next six hours as four space separated lists. The ESPHome config reads them
+# with `platform: homeassistant` text sensors (forecast_hours, forecast_conditions,
+# forecast_temps, forecast_rain) and splits them on the device.
+#
+# Add this under `template:` in configuration.yaml (or a file included from it),
+# then reload template entities (Developer tools > YAML > Template entities).
+# Entity id: sensor.ulenpas_forecast_hourly
+
+template:
+  - triggers:
+      - trigger: time_pattern
+        minutes: "/15"
+      - trigger: homeassistant
+        event: start
+      - trigger: state
+        entity_id: weather.ulenpas_weather
+    actions:
+      - action: weather.get_forecasts
+        data:
+          type: hourly
+        target:
+          entity_id: weather.ulenpas_weather
+        response_variable: fc
+      - variables:
+          hourly: >-
+            {% set ns = namespace(items=[]) %}
+            {% for e in fc['weather.ulenpas_weather'].forecast %}
+              {% if as_datetime(e.datetime) > now() and ns.items | count < 6 %}
+                {% set ns.items = ns.items + [e] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.items }}
+    sensor:
+      - name: "Ulenpas forecast hourly"
+        unique_id: ulenpas_forecast_hourly
+        icon: mdi:clock-outline
+        state: "{{ hourly | count }}"
+        attributes:
+          # local hour of each entry, e.g. "14 15 16 17 18 19"
+          hours: "{{ hourly | map(attribute='datetime') | map('as_timestamp') | map('timestamp_custom', '%H') | join(' ') }}"
+          # HA condition names, e.g. "cloudy rainy rainy partlycloudy"
+          conditions: "{{ hourly | map(attribute='condition') | join(' ') }}"
+          # temperatures in °C, e.g. "12.3 11.8 11.0 10.4 9.9 9.5"
+          temps: "{{ hourly | map(attribute='temperature') | join(' ') }}"
+          # rain chance in %, e.g. "0 10 40 60 30 0" (0 when the integration has none)
+          rain: "{{ hourly | map(attribute='precipitation_probability', default=0) | join(' ') }}"

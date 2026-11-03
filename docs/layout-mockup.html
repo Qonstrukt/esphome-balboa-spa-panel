@@ -1,0 +1,295 @@
+<title>Jacuzzi Layout v3</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: the 320x240 panel on the left at a chosen zoom, the state strip on the right. The panel itself is clickable. */
+  :root {
+    --bg: #eef0f3; --panel: #ffffff; --fg: #1c2230; --muted: #5e6675; --line: #d4d8e0; --accent: #1f6fd0;
+    --font-ui: "Montserrat", system-ui, sans-serif; --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #15181e; --panel: #1e222a; --fg: #e6e9ef; --muted: #9aa3b2; --line: #333a46; --accent: #6aa6ff; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #15181e; --panel: #1e222a; --fg: #e6e9ef; --muted: #9aa3b2; --line: #333a46; --accent: #6aa6ff; color-scheme: dark; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; box-sizing: border-box;
+    padding-block: 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; max-width: 65ch; }
+  .bench { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .stage { flex: 1 1 360px; min-width: 0; }
+  .screen-wrap { display: inline-block; max-width: 100%; overflow: auto; border: 1px solid var(--line); background: #000; border-radius: 6px; line-height: 0; }
+  svg.screen { display: block; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .controls { flex: 0 1 320px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 10px; }
+  .controls h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 6px 0 0; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; }
+  .row label { font-weight: 500; }
+  .row output { font-family: var(--font-mono); font-size: 13px; min-width: 5ch; text-align: right; }
+  .row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  select { font: inherit; padding: 4px 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.45; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hit { cursor: pointer; }
+</style>
+
+<h1>Jacuzzi Layout v3</h1>
+<p class="sub">Alternative to v2: a 56 px nav bar with four full-width tap zones (overview, weather, spa heater, heat pump), and an overview where only Jets and Lights look like buttons. Status is shown as plain icons and readouts. Tap the nav icons, tiles and buttons on the panel itself; the strip on the right sets the spa and heat pump state the device would receive.</p>
+
+<div class="bench">
+  <div class="stage">
+    <div class="screen-wrap"><svg class="screen" id="screen" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" width="960" height="720"></svg></div>
+    <p class="hint">Clickable on the panel: the four nav zones, the Jets and Lights buttons, the + and − buttons, the heat pump power button.</p>
+  </div>
+  <div class="controls">
+    <h2>Spa</h2>
+    <div class="row"><label for="water">Water temperature</label><output id="waterOut"></output><input type="range" id="water" min="20" max="42" step="0.5" value="36"></div>
+    <div class="row"><label for="spaTarget">Heater target</label><output id="spaTargetOut"></output><input type="range" id="spaTarget" min="26" max="40" step="0.5" value="38"></div>
+    <div class="row"><label for="heating">Heater on (heatstate)</label><input type="checkbox" id="heating" checked></div>
+    <div class="row"><label for="circ">Circulation pump</label><input type="checkbox" id="circ" checked></div>
+    <div class="row"><label for="jets">Jets</label><input type="checkbox" id="jets"></div>
+    <div class="row"><label for="lights">Lights</label><input type="checkbox" id="lights"></div>
+    <div class="row"><label for="range">High range</label><input type="checkbox" id="range" checked></div>
+    <h2>Home Assistant</h2>
+    <div class="row"><label for="outside">Outside temperature</label><output id="outsideOut"></output><input type="range" id="outside" min="-10" max="35" step="1" value="12"></div>
+    <div class="row"><label for="weather">Weather condition</label><select id="weather">
+      <option value="sunny">sunny</option><option value="clear-night">clear-night</option><option value="partlycloudy" selected>partlycloudy</option><option value="cloudy">cloudy</option>
+      <option value="rainy">rainy</option><option value="pouring">pouring</option><option value="lightning">lightning</option><option value="snowy">snowy</option><option value="fog">fog</option><option value="windy">windy</option>
+    </select></div>
+    <div class="row"><label for="humidity">Humidity</label><output id="humidityOut"></output><input type="range" id="humidity" min="20" max="100" step="1" value="88"></div>
+    <div class="row"><label for="wind">Wind</label><output id="windOut"></output><input type="range" id="wind" min="0" max="80" step="1" value="12"></div>
+    <div class="row"><label for="windDir">Wind bearing</label><output id="windDirOut"></output><input type="range" id="windDir" min="0" max="359" step="1" value="225"></div>
+    <div class="row"><label for="hpTarget">Heat pump target</label><output id="hpTargetOut"></output><input type="range" id="hpTarget" min="18" max="40" step="1" value="36"></div>
+    <div class="row"><label for="hpCurrent">Heat pump water temp (HP page)</label><output id="hpCurrentOut"></output><input type="range" id="hpCurrent" min="10" max="42" step="1" value="32"></div>
+    <div class="row"><label for="hpOn">Heat pump on</label><input type="checkbox" id="hpOn" checked></div>
+    <div class="row"><label for="wifi">WiFi connected</label><input type="checkbox" id="wifi" checked></div>
+    <h2>View</h2>
+    <div class="row"><label for="zoom">Zoom</label><select id="zoom"><option value="1">1×</option><option value="2">2×</option><option value="3" selected>3×</option><option value="4">4×</option></select></div>
+    <p class="note">Blue marks things that run (pump, jets, lights); red marks heat (spa heater, heat pump). Icons stand in for Material Design Icons glyphs loaded through an ESPHome <code>font:</code> entry.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const svg = $('screen');
+  const NS = 'http://www.w3.org/2000/svg';
+  const C = { cool: '#3399ff', heat: '#f44336', tile: '#1c1c1c', bar: '#111111', dim: '#8a8a8a', white: '#ffffff', black: '#000000' };
+  const state = { page: 'overview' };
+
+  function el(name, attrs, parent) {
+    const e = document.createElementNS(NS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    (parent || svg).appendChild(e);
+    return e;
+  }
+  function text(x, y, str, size, color, weight, parent) {
+    const e = el('text', { x, y, 'font-family': 'Montserrat, sans-serif', 'font-size': size, 'font-weight': weight || 500, fill: color, 'text-anchor': 'middle', 'dominant-baseline': 'central' }, parent);
+    e.textContent = str; return e;
+  }
+  function polar(cx, cy, r, deg) { const a = deg * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; }
+  function arcPath(cx, cy, r, a0, a1) {
+    const [x0, y0] = polar(cx, cy, r, a0), [x1, y1] = polar(cx, cy, r, a1);
+    return `M${x0},${y0} A${r},${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1},${y1}`;
+  }
+
+  // Stand-in icons for MDI glyphs, drawn in a 100x100 box
+  function icon(name, x, y, size, color, parent) {
+    const g = el('g', { transform: `translate(${x - size / 2} ${y - size / 2}) scale(${size / 100})`, fill: 'none', stroke: color, 'stroke-width': 9, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, parent);
+    switch (name) {
+      case 'home': el('path', { d: 'M14,52 L50,20 L86,52 M26,44 V82 H74 V44' }, g); break;
+      case 'fire': el('path', { d: 'M50,12 C52,34 30,40 30,62 A20,20 0 0 0 70,62 C70,50 62,46 58,36 C56,46 48,48 47,40 C46,30 50,22 50,12 Z', fill: color, stroke: 'none' }, g); break;
+      case 'loop':
+        el('path', { d: 'M22,56 A28,28 0 0 1 72,34' }, g); el('path', { d: 'M62,22 L74,34 L62,46' }, g);
+        el('path', { d: 'M78,44 A28,28 0 0 1 28,66' }, g); el('path', { d: 'M38,78 L26,66 L38,54' }, g); break;
+      case 'waves': [30, 52, 74].forEach(yy => el('path', { d: `M12,${yy} Q24,${yy - 12} 36,${yy} T60,${yy} T84,${yy}` }, g)); break;
+      case 'bulb': el('path', { d: 'M50,14 A22,22 0 0 1 62,54 V62 H38 V54 A22,22 0 0 1 50,14 Z' }, g); el('path', { d: 'M40,74 H60 M43,84 H57' }, g); break;
+      case 'thermo': el('path', { d: 'M42,20 A8,8 0 0 1 58,20 V56 A15,15 0 1 1 42,56 Z' }, g); el('path', { d: 'M50,36 V66' }, g); el('circle', { cx: 50, cy: 70, r: 6, fill: color, stroke: 'none' }, g); break;
+      case 'pump':
+        el('rect', { x: 12, y: 28, width: 76, height: 48, rx: 8 }, g); el('circle', { cx: 38, cy: 52, r: 13 }, g);
+        el('path', { d: 'M62,42 H78 M62,52 H78 M62,62 H78' }, g); break;
+      case 'up': el('path', { d: 'M22,64 L50,34 L78,64' }, g); break;
+      case 'down': el('path', { d: 'M22,36 L50,66 L78,36' }, g); break;
+      case 'power': el('path', { d: 'M34,30 A26,26 0 1 0 66,30 M50,16 V48' }, g); break;
+      case 'sunny':
+        el('circle', { cx: 50, cy: 50, r: 16 }, g);
+        [0,45,90,135,180,225,270,315].forEach(d => { const [x1,y1] = polar(50,50,26,d), [x2,y2] = polar(50,50,36,d); el('line', { x1, y1, x2, y2 }, g); }); break;
+      case 'clear-night': el('path', { d: 'M62,18 A30,30 0 1 0 82,62 A24,24 0 0 1 62,18 Z' }, g); break;
+      case 'partlycloudy':
+        el('circle', { cx: 36, cy: 38, r: 12 }, g);
+        [225,270,315,180].forEach(d => { const [x1,y1] = polar(36,38,19,d), [x2,y2] = polar(36,38,27,d); el('line', { x1, y1, x2, y2 }, g); });
+        el('path', { d: 'M40,78 H76 A13,13 0 0 0 76,52 A18,18 0 0 0 42,50 A14,14 0 0 0 40,78 Z', fill: '#000' }, g); break;
+      case 'cloudy': el('path', { d: 'M28,74 H74 A14,14 0 0 0 74,46 A20,20 0 0 0 36,42 A16,16 0 0 0 28,74 Z' }, g); break;
+      case 'rainy':
+        el('path', { d: 'M28,62 H74 A14,14 0 0 0 74,34 A20,20 0 0 0 36,30 A16,16 0 0 0 28,62 Z' }, g);
+        el('path', { d: 'M38,74 L34,86 M52,74 L48,86 M66,74 L62,86' }, g); break;
+      case 'pouring':
+        el('path', { d: 'M28,58 H74 A14,14 0 0 0 74,30 A20,20 0 0 0 36,26 A16,16 0 0 0 28,58 Z' }, g);
+        el('path', { d: 'M34,68 L28,90 M46,68 L40,90 M58,68 L52,90 M70,68 L64,90' }, g); break;
+      case 'lightning':
+        el('path', { d: 'M28,58 H74 A14,14 0 0 0 74,30 A20,20 0 0 0 36,26 A16,16 0 0 0 28,58 Z' }, g);
+        el('path', { d: 'M54,62 L44,78 H56 L46,94' }, g); break;
+      case 'snowy':
+        el('path', { d: 'M28,58 H74 A14,14 0 0 0 74,30 A20,20 0 0 0 36,26 A16,16 0 0 0 28,58 Z' }, g);
+        [[36,74],[52,80],[68,74],[44,92],[60,92]].forEach(([x,y]) => el('circle', { cx: x, cy: y, r: 3.5, fill: color, stroke: 'none' }, g)); break;
+      case 'fog':
+        el('path', { d: 'M28,50 H74 A14,14 0 0 0 74,22 A20,20 0 0 0 36,18 A16,16 0 0 0 28,50 Z' }, g);
+        el('path', { d: 'M24,64 H78 M30,76 H72 M36,88 H66' }, g); break;
+      case 'wifi':
+        el('path', { d: 'M12,30 A54,54 0 0 1 88,30 M26,46 A34,34 0 0 1 74,46 M40,62 A14,14 0 0 1 60,62' }, g);
+        el('circle', { cx: 50, cy: 76, r: 5, fill: color, stroke: 'none' }, g); break;
+      case 'wifi-off':
+        el('path', { d: 'M12,30 A54,54 0 0 1 88,30 M26,46 A34,34 0 0 1 74,46 M40,62 A14,14 0 0 1 60,62' }, g);
+        el('circle', { cx: 50, cy: 76, r: 5, fill: color, stroke: 'none' }, g);
+        el('path', { d: 'M16,12 L84,88' }, g); break;
+      case 'windy': el('path', { d: 'M14,40 H60 A10,10 0 1 0 50,30 M14,56 H76 A10,10 0 1 1 66,66 M14,72 H48 A8,8 0 1 1 40,80' }, g); break;
+    }
+    return g;
+  }
+
+  function hit(x, y, w, h, fn, parent) {
+    const r = el('rect', { x, y, width: w, height: h, fill: 'transparent', class: 'hit' }, parent);
+    r.addEventListener('click', fn);
+    return r;
+  }
+
+  const NAV_H = 56, CONTENT_H = 240 - NAV_H;
+
+  function navBar() {
+    el('rect', { x: 0, y: CONTENT_H, width: 320, height: NAV_H, fill: C.bar });
+    const items = [['overview', 'home', C.cool], ['weather', 'partlycloudy', C.cool], ['spa', 'fire', C.heat], ['hp', 'pump', C.heat]];
+    const zone = 320 / 4;
+    items.forEach(([page, ic, onColor], i) => {
+      const x = zone * i;
+      const g = el('g', {});
+      const on = state.page === page;
+      if (on) el('rect', { x: x + 10, y: CONTENT_H, width: zone - 20, height: 4, rx: 2, fill: onColor }, g);
+      icon(ic, x + zone / 2, CONTENT_H + NAV_H / 2 + 2, 40, on ? onColor : C.dim, g);
+      hit(x, CONTENT_H, zone, NAV_H, () => { state.page = page; render(); }, g);
+    });
+  }
+
+  // A passive status icon: coloured when active, dim when not. No background, so it does not read as a button.
+  function statusIcon(name, cx, cy, on, onColor) {
+    icon(name, cx, cy, 30, on ? onColor : C.dim);
+  }
+
+  // A real toggle button: outlined when off, filled when on.
+  function toggleButton(x, y, w, h, name, on, fn) {
+    const g = el('g', {});
+    el('rect', { x: x + 1, y: y + 1, width: w - 2, height: h - 2, rx: 10, fill: on ? C.cool : 'none', stroke: on ? C.cool : C.dim, 'stroke-width': 2 }, g);
+    icon(name, x + w / 2, y + h / 2, 32, on ? C.black : C.dim, g);
+    hit(x, y, w, h, fn, g);
+  }
+
+  function overview(s) {
+    // water arc: 150x150 at (10, 40), 270 degrees, range 20..42 (open at the bottom)
+    // clock top-left (Home Assistant time), arc moved down below it
+    const now = new Date(); text(46, 20, now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0'), 24, C.white, 500);
+    const cx = 85, cy = 115, r = 68;
+    el('path', { d: arcPath(cx, cy, r, 135, 405), stroke: C.tile, 'stroke-width': 14, fill: 'none', 'stroke-linecap': 'round' });
+    const f = (s.water - 20) / 22;
+    if (f > 0) el('path', { d: arcPath(cx, cy, r, 135, 135 + 270 * f), stroke: s.heating ? C.heat : C.cool, 'stroke-width': 14, fill: 'none', 'stroke-linecap': 'round' });
+    text(cx, cy - 6, s.water.toFixed(1) + '°', 36, C.white, 500);
+    text(cx, cy + 22, 'target ' + s.spaTarget.toFixed(1) + '°', 12, C.dim, 400);
+
+    // right column, x 172..316
+    // right column x 176..312 on a 4-column grid (centres 193, 227, 261, 295), rows at y 30 and 78
+    const col = i => 176 + 17 + 34 * i;
+    // row 1: heat sources (spa heater, heat pump) | running states (circulation, WiFi)
+    statusIcon('fire', col(0), 30, s.heating, C.heat);
+    statusIcon('pump', col(1), 30, s.hpOn, C.heat);
+    statusIcon('loop', col(2), 30, s.circ, C.cool);
+    icon(s.wifi ? 'wifi' : 'wifi-off', col(3), 30, 30, s.wifi ? C.dim : '#e05252');
+    el('line', { x1: 176, y1: 54, x2: 312, y2: 54, stroke: C.tile, 'stroke-width': 1 });
+    // row 2: weather icon and temperature as one group, centred in the column (x 176..312, centre 244)
+    const tempStr = Math.round(s.outside) + '°';
+    const tempW = tempStr.length * 19, iconW = 44, gap = 10;
+    const groupW = iconW + gap + tempW, gx = 244 - groupW / 2;
+    icon(s.weather, gx + iconW / 2, 80, iconW, C.white);
+    text(gx + iconW + gap + tempW / 2, 80, tempStr, 32, C.white, 500);
+    // row 3: the only buttons: jets and lights
+    toggleButton(174, 114, 68, 58, 'waves', s.jets, () => { $('jets').checked = !$('jets').checked; render(); });
+    toggleButton(248, 114, 68, 58, 'bulb', s.lights, () => { $('lights').checked = !$('lights').checked; render(); });
+  }
+
+  // Weather page: current condition on top, the next four hours in a tile below.
+  // The device gets the forecast from a template sensor in Home Assistant; here it is faked from the controls.
+  function weatherPage(s) {
+    icon(s.weather, 40, 34, 56, C.white);
+    const t = text(78, 34, Math.round(s.outside) + '°', 48, C.white, 500); t.setAttribute('text-anchor', 'start');
+    const name = s.weather === 'partlycloudy' ? 'partly cloudy' : s.weather.replace('-', ' ');
+    const n = text(308, 15, name, 16, C.dim, 400); n.setAttribute('text-anchor', 'end');
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const w = text(308, 38, s.wind + ' km/h ' + dirs[Math.floor((s.windDir + 22.5) / 45) % 8], 16, C.dim, 400); w.setAttribute('text-anchor', 'end');
+    const h = text(308, 61, s.humidity + '% humidity', 16, C.dim, 400); h.setAttribute('text-anchor', 'end');
+    el('rect', { x: 8, y: 88, width: 304, height: 90, rx: 8, fill: C.tile });
+    const seq = ['sunny', 'partlycloudy', 'cloudy', 'rainy', 'pouring', 'lightning', 'snowy', 'fog', 'windy', 'clear-night'];
+    const rainy = { rainy: 70, pouring: 95, lightning: 50, snowy: 60, partlycloudy: 10 };
+    const now = new Date();
+    [38, 87, 136, 184, 233, 282].forEach((cx, i) => {
+      const hh = (now.getHours() + 1 + i) % 24;
+      text(cx, 99, hh.toString().padStart(2, '0') + ':00', 12, C.dim, 400);
+      const cond = i === 0 ? s.weather : seq[(seq.indexOf(s.weather) + i) % seq.length];
+      icon(cond, cx, 128, 28, C.dim);
+      text(cx, 152, Math.round(s.outside - i * 0.7) + '°', 18, C.white, 500);
+      const pct = rainy[cond] || 0;
+      if (pct) text(cx, 169, pct + '%', 12, C.cool, 500);
+    });
+  }
+
+  function controlPage(s, kind) {
+    const isSpa = kind === 'spa';
+    const target = isSpa ? s.spaTarget : s.hpTarget;
+    const current = isSpa ? s.water : s.hpCurrent;
+    const step = isSpa ? 0.5 : 1;
+    const fmt = v => isSpa ? v.toFixed(1) + '°' : Math.round(v) + '°';
+    const inputId = isSpa ? 'spaTarget' : 'hpTarget';
+    [[8, 'down', -step], [242, 'up', step]].forEach(([x, ic, d]) => {
+      const g = el('g', {});
+      el('rect', { x, y: 12, width: 70, height: 112, rx: 12, fill: C.tile }, g);
+      icon(ic, x + 35, 68, 40, C.white, g);
+      hit(x, 12, 70, 112, () => { const i = $(inputId); i.value = Math.min(+i.max, Math.max(+i.min, +i.value + d)); render(); }, g);
+    });
+    text(160, 26, isSpa ? 'SPA HEATER' : 'HEAT PUMP', 20, C.dim, 500);
+    text(160, 68, fmt(target), 48, C.white, 500);
+    text(160, 110, 'now ' + fmt(current), 20, C.dim, 400);
+    // status strip
+    el('rect', { x: 8, y: 132, width: 304, height: 44, rx: 8, fill: C.tile });
+    icon(isSpa ? 'fire' : 'pump', 34, 154, 28, C.heat);
+    if (isSpa) {
+      text(160, 154, s.heating ? 'heating' : 'idle', 20, C.white, 500);
+      text(278, 154, s.range ? 'HIGH' : 'LOW', 20, C.white, 500);
+    } else {
+      text(150, 154, s.hpOn ? 'heating' : 'off', 20, C.white, 500);
+      const g = el('g', {});
+      el('rect', { x: 262, y: 137, width: 44, height: 34, rx: 8, fill: s.hpOn ? C.heat : C.bar }, g);
+      icon('power', 284, 154, 26, s.hpOn ? C.white : C.dim, g);
+      hit(262, 137, 44, 34, () => { $('hpOn').checked = !$('hpOn').checked; render(); }, g);
+    }
+  }
+
+  function render() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const s = {
+      water: +$('water').value, spaTarget: +$('spaTarget').value, heating: $('heating').checked, circ: $('circ').checked,
+      jets: $('jets').checked, lights: $('lights').checked, range: $('range').checked, outside: +$('outside').value,
+      hpTarget: +$('hpTarget').value, hpCurrent: +$('hpCurrent').value, hpOn: $('hpOn').checked,
+      weather: $('weather').value, humidity: +$('humidity').value, wind: +$('wind').value, windDir: +$('windDir').value,
+      wifi: $('wifi').checked,
+    };
+    state.wifi = $('wifi').checked;
+    const z = +$('zoom').value;
+    svg.setAttribute('width', 320 * z); svg.setAttribute('height', 240 * z);
+    el('rect', { x: 0, y: 0, width: 320, height: 240, fill: '#000' });
+    if (state.page === 'overview') overview(s); else if (state.page === 'weather') weatherPage(s); else controlPage(s, state.page);
+    navBar();
+    $('waterOut').value = s.water.toFixed(1) + ' °C'; $('spaTargetOut').value = s.spaTarget.toFixed(1) + ' °C';
+    $('outsideOut').value = s.outside + ' °C'; $('humidityOut').value = s.humidity + ' %'; $('windOut').value = s.wind + ' km/h'; $('windDirOut').value = s.windDir + '°'; $('hpTargetOut').value = s.hpTarget + ' °C'; $('hpCurrentOut').value = s.hpCurrent + ' °C';
+  }
+
+  ['water', 'spaTarget', 'heating', 'circ', 'jets', 'lights', 'range', 'outside', 'weather', 'humidity', 'wind', 'windDir', 'hpTarget', 'hpCurrent', 'hpOn', 'wifi', 'zoom'].forEach(id => $(id).addEventListener('input', render));
+  render();
+})();
+</script>

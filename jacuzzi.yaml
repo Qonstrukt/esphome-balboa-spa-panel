@@ -1,0 +1,1326 @@
+esphome:
+  name: $hostname
+  comment: $friendly_name
+  friendly_name: $friendly_name
+
+# Hardware: M5Stack Tough. Board, AXP192 power, display, touch and backlight come
+# from the m5tough package (https://github.com/Qonstrukt/esphome-m5tough).
+packages:
+  m5tough: github://Qonstrukt/esphome-m5tough/m5tough.yaml@main
+  m5tough_speaker: github://Qonstrukt/esphome-m5tough/m5tough-speaker.yaml@main
+
+substitutions:
+  hostname: jacuzzi
+  friendly_name: "Balboa Jacuzzi"
+  
+  weather_entity: weather.ulenpas_weather
+  forecast_entity: sensor.ulenpas_forecast_hourly   # template sensor in HA, see ha-forecast-sensor.yaml
+  wind_unit: "km/h"                                  # wind_speed_unit of the weather entity
+  heatpump_entity: climate.w_eau_wsh_005
+
+  # Colours, shared by the arc, indicators, buttons and nav bar
+  c_cool: "0x3399ff"
+  c_heat: "0xf44336"
+  c_tile: "0x1c1c1c"
+  c_bar: "0x111111"
+  c_dim: "0x8a8a8a"
+  c_alert: "0xe05252"
+
+  # Screen behaviour
+  idle_timeout: 120s        # no touch for this long -> dim (in use) or lock + backlight off (parked)
+  in_use_above: "30.0"      # spa counts as "in use" when the heater target is above this (°C)
+  hp_circ_delay: 90s        # circulation must run this long before the heat pump is switched on
+
+logger:
+  # INFO keeps warnings, errors and the spa clock resync line; DEBUG would write
+  # several lines per Balboa status frame to the serial port and stall the loop.
+  level: INFO
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  reboot_timeout: 2min
+  min_auth_mode: WPA2
+  output_power: 20dB
+  on_connect:
+    - lvgl.label.update: { id: wifi_icon, text: "\U000F05A9", text_color: $c_dim }
+  on_disconnect:
+    - lvgl.label.update: { id: wifi_icon, text: "\U000F05AA", text_color: $c_alert }
+  
+  ap:
+    ssid: "$friendly_name Hotspot"
+    password: !secret ap_wifi_password
+
+captive_portal:
+
+ota:
+  - platform: esphome
+    encryption:
+
+api:
+  encryption:
+    key: !secret jacuzzi_api_key
+
+# Exposes the last reset reason to Home Assistant (e.g. "Brownout", "Power On", "Software Reset")
+debug:
+  update_interval: 30s
+
+# ---------------------------------------------------------------------------
+# Screen state: in use (target > $in_use_above) -> idle dims to 10 %;
+# parked -> idle shows the lock page and switches the backlight off.
+# Touch restores the saved brightness from either state. In rain the lock
+# page needs a long press; otherwise a tap unlocks.
+# ---------------------------------------------------------------------------
+globals:
+  - id: spa_in_use
+    type: bool
+    initial_value: "false"
+  - id: last_spa_time_sync   # millis() of the last clock sync sent to the spa, 0 = never
+    type: uint32_t
+    initial_value: "0"
+  - id: screen_locked
+    type: bool
+    initial_value: "false"
+  - id: screen_dimmed
+    type: bool
+    initial_value: "false"
+
+script:
+  # Backlight off, LVGL paused with snow against image persistence.
+  - id: screen_off
+    then:
+      - lvgl.pause:
+          show_snow: true
+      - light.turn_off: m5tough_backlight_light
+      - lambda: id(screen_dimmed) = false;
+
+  # 10 %: written to the output directly, so the light keeps its saved brightness.
+  - id: screen_dim
+    then:
+      - output.set_level:
+          id: m5tough_backlight
+          level: 10%
+      - lambda: id(screen_dimmed) = true;
+
+  # Resume LVGL and restore the saved brightness.
+  - id: screen_on
+    then:
+      - lvgl.resume:
+      - lvgl.widget.redraw:
+      - lambda: id(screen_dimmed) = false;
+      - light.turn_on: m5tough_backlight_light
+
+  # Lock: show the lock page without the nav bar, then backlight off.
+  - id: screen_lock
+    then:
+      - lambda: id(screen_locked) = true;
+      - lvgl.widget.update: { id: nav_bar, hidden: true }
+      - lvgl.page.show: lock_page
+      - script.execute: screen_off
+
+  # Unlock: back to the overview with the nav bar.
+  - id: screen_unlock
+    then:
+      - lambda: id(screen_locked) = false;
+      - lvgl.widget.update: { id: nav_bar, hidden: false }
+      - lvgl.page.show: overview_page
+
+  # What idle means right now: dim while in use, lock when parked.
+  - id: screen_idle
+    then:
+      - if:
+          condition:
+            lambda: return id(spa_in_use);
+          then:
+            - script.execute: screen_dim
+          else:
+            - script.execute: screen_lock
+
+  # Heat pump follows the circulation pump (when hp_auto is on): started after
+  # the pump has run for $hp_circ_delay, stopped as soon as the pump stops.
+  - id: hp_circ_start
+    mode: restart
+    then:
+      - delay: $hp_circ_delay
+      - if:
+          condition:
+            and:
+              - switch.is_on: hp_auto
+              - binary_sensor.is_on: spa_circulation
+              - lambda: return id(hp_state).state != "heat";
+          then:
+            - logger.log: { level: INFO, tag: hp_auto, format: "circulation running for ${hp_circ_delay}: heat pump on" }
+            - homeassistant.action:
+                action: climate.turn_on
+                data: { entity_id: $heatpump_entity }
+  - id: hp_circ_stop
+    then:
+      - script.stop: hp_circ_start
+      - if:
+          condition:
+            and:
+              - switch.is_on: hp_auto
+              - lambda: return id(hp_state).state == "heat";
+          then:
+            - logger.log: { level: INFO, tag: hp_auto, format: "circulation stopped: heat pump off" }
+            - homeassistant.action:
+                action: climate.turn_off
+                data: { entity_id: $heatpump_entity }
+
+  # Spa clock: compare the time the spa reports with Home Assistant time and
+  # resync when they differ by more than a minute (power loss resets the spa
+  # clock, and the spa knows nothing about daylight saving). Runs every minute
+  # at :30 and right after a time sync; at most one resync per 5 minutes.
+  - id: spa_time_check
+    then:
+      - lambda: |-
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) return;
+          auto *st = id(spa).get_current_state();
+          if (!id(spa).is_communicating() || std::isnan(st->current_temp)) return;  // no status from the spa yet
+          int spa_min = st->hour * 60 + st->minutes;
+          int ha_min = now.hour * 60 + now.minute;
+          int diff = abs(spa_min - ha_min);
+          if (diff > 720) diff = 1440 - diff;
+          if (diff <= 1) return;
+          if (id(last_spa_time_sync) != 0 && millis() - id(last_spa_time_sync) < 300000) return;
+          ESP_LOGI("spa_time", "Spa clock %02d:%02d, Home Assistant %02d:%02d: syncing", st->hour, st->minutes, now.hour, now.minute);
+          id(last_spa_time_sync) = millis();
+          id(sync_spa_time).press();
+  # Wind label on the weather page, from wind_speed and wind_bearing
+  - id: update_wind_text
+    then:
+      - lambda: |-
+          static const char *dirs[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+          float spd = id(wind_speed).state, brg = id(wind_bearing).state;
+          char buf[32];
+          if (std::isnan(spd)) {
+            snprintf(buf, sizeof(buf), "-- ${wind_unit}");
+          } else if (std::isnan(brg)) {
+            snprintf(buf, sizeof(buf), "%.0f ${wind_unit}", spd);
+          } else {
+            int d = ((int) ((brg + 22.5f) / 45.0f)) % 8;
+            snprintf(buf, sizeof(buf), "%.0f ${wind_unit} %s", spd, dirs[d]);
+          }
+          lv_label_set_text(id(wx_wind_text), buf);
+  # Countdown started when the target drops below the in-use threshold.
+  - id: blank_later
+    mode: restart
+    then:
+      - delay: $idle_timeout
+      - script.execute: screen_idle
+
+external_components:
+  - source: github://brianfeucht/esphome-balboa-spa
+    components: [balboa_spa]
+     
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time_sync:
+      - lvgl.label.update:
+          id: clock_text
+          text: !lambda return id(ha_time).now().strftime("%H:%M");
+      - script.execute: spa_time_check
+    on_time:
+      - seconds: 0
+        then:
+          - lvgl.label.update:
+              id: clock_text
+              text: !lambda return id(ha_time).now().strftime("%H:%M");
+      - seconds: 30
+        then:
+          - script.execute: spa_time_check
+
+uart:
+  id: spa_uart_bus
+  # External M5 RS485 unit (U034) on Port C (blue, the UART port): Tough TX GPIO14 -> unit yellow (RX),
+  # Tough RX GPIO13 <- unit white (TX). The unit's 12 V input powers the Tough through the Grove 5 V pin.
+  # The Tough's internal RS485 port (TX GPIO19 / RX GPIO27) is not used: its 120 ohm termination
+  # (R7 on the Ext Board) collapses the passively driven 1-bits of the auto-direction circuit.
+  # Port A would be GPIO32 (TX) / GPIO33 (RX).
+  tx_pin: GPIO14
+  rx_pin: GPIO13
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  baud_rate: 115200
+  rx_buffer_size: 8192   # Balboa bus is busy at 115200 (~11.5 kB/s); 8 kB covers a ~700 ms loop stall
+  
+balboa_spa:
+  id: spa
+  spa_temp_scale: C
+  # No client_id override: the spa assigns IDs (0x10 upwards) to each client that asks.
+  # A fixed ID collides with the Balboa WiFi module after a power cycle, jamming the bus.
+
+light:
+  - platform: balboa_spa
+    balboa_spa_id: spa
+    light:
+      id: balboa_lights
+      name: Lights
+      on_state:
+        - lvgl.widget.update:
+            id: lights_button
+            state:
+              checked: !lambda return id(balboa_lights).current_values.is_on();
+   
+switch:
+  # Heat pump automation on/off (manual control stays possible from HA and the panel)
+  - platform: template
+    id: hp_auto
+    name: "Heat Pump Follows Circulation"
+    icon: mdi:heat-pump-outline
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+
+  - platform: balboa_spa
+    balboa_spa_id: spa
+    jet1:
+      id: balboa_jets
+      name: Jets
+      max_toggle_attempts: 5  # Optional: max attempts to reach desired state (default: 5)
+      discard_updates: 5      # Optional: state updates to ignore after each toggle (default: 20)
+      on_state:
+        - lvgl.widget.update:
+            id: jets_button
+            state:
+              checked: !lambda return x;
+
+climate:
+  - platform: balboa_spa
+    id: balboa_spa_climate
+    balboa_spa_id: spa
+    name: "Spa Thermostat"
+    visual:
+      min_temperature: 26 °C
+      max_temperature: 40 °C
+      temperature_step: 0.5 °C
+    on_state:
+      - lvgl.arc.update:
+          id: water_arc
+          value: !lambda return (int) lroundf(id(balboa_spa_climate).current_temperature * 10);
+      - lvgl.label.update:
+          id: water_text
+          text:
+            format: "%.1f°"
+            args: [ 'id(balboa_spa_climate).current_temperature' ]
+      - lvgl.label.update:
+          id: water_target_text
+          text:
+            format: "target %.1f°"
+            args: [ 'id(balboa_spa_climate).target_temperature' ]
+      - lvgl.label.update:
+          id: spa_target_text
+          text:
+            format: "%.1f°"
+            args: [ 'id(balboa_spa_climate).target_temperature' ]
+      - lvgl.label.update:
+          id: spa_current_text
+          text:
+            format: "now %.1f°"
+            args: [ 'id(balboa_spa_climate).current_temperature' ]
+      # In-use rule: target above $in_use_above keeps the screen on (dimmed when idle)
+      - lambda: |-
+          bool in_use = id(balboa_spa_climate).target_temperature > ${in_use_above}f;
+          if (in_use && !id(spa_in_use)) {
+            id(spa_in_use) = true;
+            if (id(screen_locked)) id(screen_unlock).execute();
+            id(screen_on).execute();
+          } else if (!in_use && id(spa_in_use)) {
+            id(spa_in_use) = false;
+            id(blank_later).execute();
+          }
+
+sensor:
+  # Diagnostics: loop stalls longer than ~180 ms overflow the 2048-byte UART buffer and show up as CRC errors
+  - platform: debug
+    loop_time:
+      name: "Loop Time"
+    free:
+      name: "Heap Free"
+
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+
+  - platform: balboa_spa
+    balboa_spa_id: spa
+    fault_code:
+      name: Fault Code
+    fault_total_entries:
+      name: Fault Total Entries
+    fault_current_entry:
+      name: Fault Current Entry
+    fault_days_ago:
+      name: Fault Days Ago
+
+  - platform: homeassistant
+    id: outside_temp
+    entity_id: $weather_entity
+    attribute: temperature
+    on_value:
+      - lvgl.label.update:
+          id: outside_text
+          text:
+            format: "%.0f°"
+            args: [ 'x' ]
+      - lvgl.label.update:
+          id: wx_now_temp
+          text:
+            format: "%.0f°"
+            args: [ 'x' ]
+
+  - platform: homeassistant
+    id: wind_speed
+    entity_id: $weather_entity
+    attribute: wind_speed
+    on_value:
+      - script.execute: update_wind_text
+  - platform: homeassistant
+    id: wind_bearing
+    entity_id: $weather_entity
+    attribute: wind_bearing
+    on_value:
+      - script.execute: update_wind_text
+  - platform: homeassistant
+    id: humidity
+    entity_id: $weather_entity
+    attribute: humidity
+    on_value:
+      - lvgl.label.update:
+          id: wx_hum_text
+          text: !lambda |-
+            char buf[24];
+            snprintf(buf, sizeof(buf), "%.0f%% humidity", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: hp_current
+    entity_id: $heatpump_entity
+    attribute: current_temperature
+    on_value:
+      - lvgl.label.update:
+          id: hp_current_text
+          text:
+            format: "now %.0f°"
+            args: [ 'x' ]
+
+  - platform: homeassistant
+    id: hp_target
+    entity_id: $heatpump_entity
+    attribute: temperature
+    on_value:
+      - lvgl.label.update:
+          id: hp_target_text
+          text:
+            format: "%.0f°"
+            args: [ 'x' ]
+      
+binary_sensor:
+  - platform: balboa_spa
+    balboa_spa_id: spa
+    blower:
+      name: Blower
+      device_class: running
+    highrange:
+      name: High Range
+      device_class: power
+      on_state:
+        - lvgl.label.update:
+            id: spa_range_text
+            text: !lambda |-
+              return std::string(x ? "HIGH" : "LOW");
+
+    circulation:
+      id: spa_circulation
+      name: Circulation Pump
+      device_class: running
+      on_state:
+        - lvgl.label.update:
+            id: circ_icon
+            text_color: !lambda |-
+              return x ? lv_color_hex($c_cool) : lv_color_hex($c_dim);
+        - if:
+            condition:
+              lambda: return x;
+            then:
+              - script.execute: hp_circ_start
+            else:
+              - script.execute: hp_circ_stop
+              
+    restmode:
+      name: Rest Mode
+      device_class: power
+      
+    heatstate:
+      name: Heat State
+      device_class: heat
+      on_state:
+        - lvgl.label.update:
+            id: heater_icon
+            text_color: !lambda |-
+              return x ? lv_color_hex($c_heat) : lv_color_hex($c_dim);
+        - lvgl.arc.update:
+            id: water_arc
+            indicator:
+              arc_color: !lambda |-
+                return x ? lv_color_hex($c_heat) : lv_color_hex($c_cool);
+        - lvgl.label.update:
+            id: spa_state_text
+            text: !lambda |-
+              return std::string(x ? "heating" : "idle");
+              
+    connected:
+      name: Connected
+      
+    filter1_running:
+      name: "Filter 1 Running"
+      device_class: running      
+
+text:
+  - platform: balboa_spa
+    balboa_spa_id: spa
+    spa_time:
+      name: "Set Spa Time"
+      mode: TEXT
+    filter1_start_time:
+      name: "Set Filter 1 Start Time"
+      mode: TEXT
+    filter1_duration:
+      name: "Set Filter 1 Duration"
+      mode: TEXT
+    # filter2_start_time:
+    #   name: "Set Filter 2 Start Time"
+    #   mode: TEXT
+    # filter2_duration:
+    #   name: "Set Filter 2 Duration"
+    #   mode: TEXT
+
+text_sensor:
+  - platform: balboa_spa
+    balboa_spa_id: spa
+    spa_time:
+      name: "Spa Time"
+    filter1_config:
+      name: "Filter 1 Config"
+    # filter2_config:
+    #   name: "Filter 2 Config"
+    fault_message:
+      name: "Fault Message"
+    fault_log_time:
+      name: "Fault Log Time"
+    reminder:
+      name: "Reminder"
+    component_version:
+      name: "Component Version"
+
+  - platform: homeassistant
+    id: hp_state
+    entity_id: $heatpump_entity
+    on_value:
+      - if:
+          condition:
+            lambda: return x == "heat";
+          then:
+            - lvgl.label.update: { id: hp_icon, text_color: $c_heat }
+            - lvgl.widget.update: { id: hp_power_button, state: { checked: true } }
+            - lvgl.label.update: { id: hp_state_text, text: "heating" }
+          else:
+            - lvgl.label.update: { id: hp_icon, text_color: $c_dim }
+            - lvgl.widget.update: { id: hp_power_button, state: { checked: false } }
+            - lvgl.label.update:
+                id: hp_state_text
+                text: !lambda return x;
+
+  # Weather condition -> MDI glyph. Home Assistant condition names:
+  # https://www.home-assistant.io/integrations/weather/#condition-mapping
+  # Drives the overview icon and the "now" block of the weather page.
+  - platform: homeassistant
+    id: weather_state
+    entity_id: $weather_entity
+    on_value:
+      - lambda: |-
+          auto glyph = [](const std::string &c) -> const char * {
+            if (c == "sunny")           return "\U000F0599";  // weather-sunny
+            if (c == "clear-night")     return "\U000F0594";  // weather-night
+            if (c == "partlycloudy")    return "\U000F0595";  // weather-partly-cloudy
+            if (c == "cloudy")          return "\U000F0590";  // weather-cloudy
+            if (c == "rainy")           return "\U000F0597";  // weather-rainy
+            if (c == "pouring")         return "\U000F0596";  // weather-pouring
+            if (c == "lightning")       return "\U000F0593";  // weather-lightning
+            if (c == "lightning-rainy") return "\U000F067E";  // weather-lightning-rainy
+            if (c == "snowy")           return "\U000F0598";  // weather-snowy
+            if (c == "snowy-rainy")     return "\U000F067F";  // weather-snowy-rainy
+            if (c == "hail")            return "\U000F0592";  // weather-hail
+            if (c == "fog")             return "\U000F0591";  // weather-fog
+            if (c == "windy")           return "\U000F059D";  // weather-windy
+            if (c == "windy-variant")   return "\U000F059E";  // weather-windy-variant
+            if (c == "exceptional")     return "\U000F05D6";  // alert-circle-outline
+            return "\U000F0590";
+          };
+          lv_label_set_text(id(weather_icon), glyph(x));
+          lv_label_set_text(id(wx_now_icon), glyph(x));
+          // readable condition name: "partlycloudy" -> "partly cloudy", "snowy-rainy" -> "snowy rainy"
+          std::string name = (x == "partlycloudy") ? std::string("partly cloudy") : x;
+          for (auto &ch : name) if (ch == '-') ch = ' ';
+          lv_label_set_text(id(wx_now_text), name.c_str());
+
+  # Hourly forecast: six entries as space separated lists in the attributes of
+  # a trigger based template sensor in Home Assistant (see ha-forecast-sensor.yaml).
+  - platform: homeassistant
+    id: forecast_hours
+    entity_id: $forecast_entity
+    attribute: hours
+    on_value:
+      - lambda: |-
+          lv_obj_t *labels[6] = { id(fc_time_0), id(fc_time_1), id(fc_time_2), id(fc_time_3), id(fc_time_4), id(fc_time_5) };
+          size_t start = 0;
+          for (int i = 0; i < 6; i++) {
+            size_t end = x.find(' ', start);
+            std::string part = start < x.size() ? x.substr(start, end == std::string::npos ? std::string::npos : end - start) : "";
+            lv_label_set_text(labels[i], part.empty() ? "--:--" : (part + ":00").c_str());
+            start = (end == std::string::npos) ? x.size() : end + 1;
+          }
+
+  - platform: homeassistant
+    id: forecast_conditions
+    entity_id: $forecast_entity
+    attribute: conditions
+    on_value:
+      - lambda: |-
+          auto glyph = [](const std::string &c) -> const char * {
+            if (c == "sunny")           return "\U000F0599";
+            if (c == "clear-night")     return "\U000F0594";
+            if (c == "partlycloudy")    return "\U000F0595";
+            if (c == "cloudy")          return "\U000F0590";
+            if (c == "rainy")           return "\U000F0597";
+            if (c == "pouring")         return "\U000F0596";
+            if (c == "lightning")       return "\U000F0593";
+            if (c == "lightning-rainy") return "\U000F067E";
+            if (c == "snowy")           return "\U000F0598";
+            if (c == "snowy-rainy")     return "\U000F067F";
+            if (c == "hail")            return "\U000F0592";
+            if (c == "fog")             return "\U000F0591";
+            if (c == "windy")           return "\U000F059D";
+            if (c == "windy-variant")   return "\U000F059E";
+            if (c == "exceptional")     return "\U000F05D6";
+            return "\U000F0590";
+          };
+          lv_obj_t *labels[6] = { id(fc_icon_0), id(fc_icon_1), id(fc_icon_2), id(fc_icon_3), id(fc_icon_4), id(fc_icon_5) };
+          size_t start = 0;
+          for (int i = 0; i < 6; i++) {
+            size_t end = x.find(' ', start);
+            std::string part = start < x.size() ? x.substr(start, end == std::string::npos ? std::string::npos : end - start) : "";
+            lv_label_set_text(labels[i], glyph(part));
+            start = (end == std::string::npos) ? x.size() : end + 1;
+          }
+
+  - platform: homeassistant
+    id: forecast_temps
+    entity_id: $forecast_entity
+    attribute: temps
+    on_value:
+      - lambda: |-
+          lv_obj_t *labels[6] = { id(fc_temp_0), id(fc_temp_1), id(fc_temp_2), id(fc_temp_3), id(fc_temp_4), id(fc_temp_5) };
+          size_t start = 0;
+          for (int i = 0; i < 6; i++) {
+            size_t end = x.find(' ', start);
+            std::string part = start < x.size() ? x.substr(start, end == std::string::npos ? std::string::npos : end - start) : "";
+            if (part.empty()) {
+              lv_label_set_text(labels[i], "--°");
+            } else {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%.0f°", atof(part.c_str()));
+              lv_label_set_text(labels[i], buf);
+            }
+            start = (end == std::string::npos) ? x.size() : end + 1;
+          }
+
+  - platform: homeassistant
+    id: forecast_rain
+    entity_id: $forecast_entity
+    attribute: rain
+    on_value:
+      - lambda: |-
+          lv_obj_t *labels[6] = { id(fc_rain_0), id(fc_rain_1), id(fc_rain_2), id(fc_rain_3), id(fc_rain_4), id(fc_rain_5) };
+          size_t start = 0;
+          for (int i = 0; i < 6; i++) {
+            size_t end = x.find(' ', start);
+            std::string part = start < x.size() ? x.substr(start, end == std::string::npos ? std::string::npos : end - start) : "";
+            int pct = part.empty() ? 0 : atoi(part.c_str());
+            if (pct <= 0) {
+              lv_label_set_text(labels[i], " ");   // keep the row height, show nothing
+            } else {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%d%%", pct);
+              lv_label_set_text(labels[i], buf);
+            }
+            start = (end == std::string::npos) ? x.size() : end + 1;
+          }
+
+  - platform: debug
+    reset_reason:
+      name: "Reset Reason"
+
+  - platform: version
+    name: 'ESPHome Version'
+
+  - platform: wifi_info
+    ip_address:
+      name: 'IP'
+    ssid:
+      name: 'SSID'
+    bssid:
+      name: 'BSSID'
+    mac_address:
+      name: "MAC"
+
+  - platform: template
+    name: 'Friendly Name'
+    icon: 'mdi:information-outline'
+    lambda: |-
+      return {"$friendly_name"};
+
+button:
+  - platform: balboa_spa
+    balboa_spa_id: spa
+    sync_time:
+      id: sync_spa_time
+      name: "Sync Spa Time"
+    # disable_filter2:
+    #   name: "Disable Filter 2"
+    request_fault_log:
+      name: "Request Fault Log"
+    clear_reminder:
+      name: "Clear Reminder"
+  
+# Touch while blanked or dimmed: back to the saved brightness (touch itself is from the package)
+touchscreen:
+  - id: !extend m5tough_touch
+    on_release:
+      - if:
+          condition:
+            or:
+              - lvgl.is_paused:
+              - lambda: return id(screen_dimmed);
+          then:
+            - script.execute: screen_on
+
+# Material Design Icons. Check codepoints at https://pictogrammers.com/library/mdi/
+# Each glyph is rasterised per font size at build time, so each list holds only
+# the glyphs drawn at that size (status row, strips and forecast at 28 px; nav,
+# buttons, overview weather and lock at 40 px; current condition at 56 px).
+font:
+  - file: "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.ttf?v=7.4.47"
+    id: mdi_28
+    size: 28
+    bpp: 4
+    glyphs:
+      - "\U000F0238"   # fire (heater status, spa strip)
+      - "\U000F1A44"   # heat-pump-outline (heat pump status, hp strip)
+      - "\U000F006A"   # autorenew (circulation status)
+      - "\U000F05A9"   # wifi (set by wifi on_connect)
+      - "\U000F05AA"   # wifi-off (set by wifi on_disconnect)
+      - "\U000F0425"   # power (heat pump power button)
+      # forecast icons on the weather page (fc_icon_*)
+      - "\U000F0599"   # weather-sunny
+      - "\U000F0594"   # weather-night
+      - "\U000F0595"   # weather-partly-cloudy
+      - "\U000F0590"   # weather-cloudy (default)
+      - "\U000F0597"   # weather-rainy
+      - "\U000F0596"   # weather-pouring
+      - "\U000F0593"   # weather-lightning
+      - "\U000F067E"   # weather-lightning-rainy
+      - "\U000F0598"   # weather-snowy
+      - "\U000F067F"   # weather-snowy-rainy
+      - "\U000F0592"   # weather-hail
+      - "\U000F0591"   # weather-fog
+      - "\U000F059D"   # weather-windy
+      - "\U000F059E"   # weather-windy-variant
+      - "\U000F05D6"   # alert-circle-outline (exceptional)
+  - file: "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.ttf?v=7.4.47"
+    id: mdi_40
+    size: 40
+    bpp: 4
+    glyphs:
+      - "\U000F02DC"   # home (nav)
+      - "\U000F0238"   # fire (nav)
+      - "\U000F1A44"   # heat-pump-outline (nav)
+      - "\U000F12E5"   # hydro-power (jets button)
+      - "\U000F0335"   # lightbulb (lights button)
+      - "\U000F0143"   # chevron-up (+ buttons)
+      - "\U000F0140"   # chevron-down (- buttons)
+      - "\U000F033E"   # lock (lock page)
+      # weather_icon (overview) and the weather nav tab
+      - "\U000F0599"   # weather-sunny
+      - "\U000F0594"   # weather-night
+      - "\U000F0595"   # weather-partly-cloudy
+      - "\U000F0590"   # weather-cloudy (default)
+      - "\U000F0597"   # weather-rainy
+      - "\U000F0596"   # weather-pouring
+      - "\U000F0593"   # weather-lightning
+      - "\U000F067E"   # weather-lightning-rainy
+      - "\U000F0598"   # weather-snowy
+      - "\U000F067F"   # weather-snowy-rainy
+      - "\U000F0592"   # weather-hail
+      - "\U000F0591"   # weather-fog
+      - "\U000F059D"   # weather-windy
+      - "\U000F059E"   # weather-windy-variant
+      - "\U000F05D6"   # alert-circle-outline (exceptional)
+  - file: "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.ttf?v=7.4.47"
+    id: mdi_56
+    size: 56
+    bpp: 4
+    glyphs:
+      # wx_now_icon on the weather page, set from weather_state
+      - "\U000F0599"   # weather-sunny
+      - "\U000F0594"   # weather-night
+      - "\U000F0595"   # weather-partly-cloudy
+      - "\U000F0590"   # weather-cloudy (default)
+      - "\U000F0597"   # weather-rainy
+      - "\U000F0596"   # weather-pouring
+      - "\U000F0593"   # weather-lightning
+      - "\U000F067E"   # weather-lightning-rainy
+      - "\U000F0598"   # weather-snowy
+      - "\U000F067F"   # weather-snowy-rainy
+      - "\U000F0592"   # weather-hail
+      - "\U000F0591"   # weather-fog
+      - "\U000F059D"   # weather-windy
+      - "\U000F059E"   # weather-windy-variant
+      - "\U000F05D6"   # alert-circle-outline (exceptional)
+
+# ---------------------------------------------------------------------------
+# LVGL: 320x240. Nav bar 56 px at the bottom, content area 320x184 above it.
+# ---------------------------------------------------------------------------
+lvgl:
+  displays:
+    - m5tough_display
+  touchscreens:
+    - m5tough_touch
+
+  on_idle:
+    - timeout: $idle_timeout
+      then:
+        - script.execute: screen_idle
+
+  # Shared styles
+  style_definitions:
+    # Nav tab: a full-height, borderless zone; the active one gets an indicator bar
+    - id: nav_style
+      width: 80
+      height: 56
+      radius: 0
+      bg_opa: TRANSP
+      border_width: 0
+      shadow_width: 0
+      pad_all: 0
+      text_color: $c_dim
+    # Overview toggle button: outlined when off, filled when on (see `checked:` on each)
+    - id: toggle_style
+      width: 68
+      height: 58
+      radius: 10
+      bg_opa: TRANSP
+      border_width: 2
+      border_color: $c_dim
+      shadow_width: 0
+      pad_all: 0
+      text_color: $c_dim
+    # Big +/- buttons on the control pages
+    - id: big_button
+      width: 70
+      height: 112
+      radius: 12
+      bg_color: $c_tile
+      bg_opa: COVER
+      border_width: 0
+      shadow_width: 0
+      text_color: white
+    # Active-tab indicator bar
+    - id: nav_bar_style
+      width: 60
+      height: 4
+      radius: 2
+      bg_opa: COVER
+      border_width: 0
+      align: TOP_MID
+
+  # Nav bar on every page
+  top_layer:
+    widgets:
+      - container:
+          id: nav_bar
+          width: 320
+          height: 56
+          align: BOTTOM_MID
+          bg_color: $c_bar
+          bg_opa: COVER
+          border_width: 0
+          radius: 0
+          pad_all: 0
+          scrollable: false
+          scrollbar_mode: "OFF"
+          layout:
+            type: FLEX
+            flex_flow: ROW
+            flex_align_main: SPACE_EVENLY
+            flex_align_cross: CENTER
+          widgets:
+            - button:
+                id: nav_overview
+                styles: nav_style
+                widgets:
+                  - container: { id: nav_overview_bar, styles: nav_bar_style, width: 60, height: 4, align: TOP_MID, bg_color: $c_cool }
+                  - label: { id: nav_overview_icon, text: "\U000F02DC", text_font: mdi_40, text_color: $c_cool, align: CENTER, y: 2 }
+                on_click:
+                  - lvgl.page.show: overview_page
+            - button:
+                id: nav_weather
+                styles: nav_style
+                widgets:
+                  - container: { id: nav_weather_bar, styles: nav_bar_style, width: 60, height: 4, align: TOP_MID, bg_color: $c_cool, hidden: true }
+                  - label: { id: nav_weather_icon, text: "\U000F0595", text_font: mdi_40, align: CENTER, y: 2 }
+                on_click:
+                  - lvgl.page.show: weather_page
+            - button:
+                id: nav_spa
+                styles: nav_style
+                widgets:
+                  - container: { id: nav_spa_bar, styles: nav_bar_style, width: 60, height: 4, align: TOP_MID, bg_color: $c_heat, hidden: true }
+                  - label: { id: nav_spa_icon, text: "\U000F0238", text_font: mdi_40, align: CENTER, y: 2 }
+                on_click:
+                  - lvgl.page.show: spa_page
+            - button:
+                id: nav_hp
+                styles: nav_style
+                widgets:
+                  - container: { id: nav_hp_bar, styles: nav_bar_style, width: 60, height: 4, align: TOP_MID, bg_color: $c_heat, hidden: true }
+                  - label: { id: nav_hp_icon, text: "\U000F1A44", text_font: mdi_40, align: CENTER, y: 2 }
+                on_click:
+                  - lvgl.page.show: hp_page
+
+  pages:
+    # ------------------------------------------------------------------ overview
+    - id: overview_page
+      bg_color: black
+      text_color: white
+      on_load:
+        - lvgl.label.update: { id: nav_overview_icon, text_color: $c_cool }
+        - lvgl.label.update: { id: nav_weather_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_spa_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_hp_icon, text_color: $c_dim }
+        - lvgl.widget.update: { id: nav_overview_bar, hidden: false }
+        - lvgl.widget.update: { id: nav_weather_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_spa_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_hp_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_bar, hidden: false }
+      widgets:
+        # Clock, top left (Home Assistant time)
+        - label: { id: clock_text, text: "--:--", text_font: montserrat_24, text_color: white, x: 12, y: 6 }
+
+        # Water temperature arc, left, below the clock
+        - arc:
+            id: water_arc
+            x: 10
+            y: 40
+            width: 150
+            height: 150
+            min_value: 200          # tenths of a degree
+            max_value: 420
+            value: 200
+            arc_width: 14
+            arc_color: $c_tile      # background track
+            indicator:
+              arc_width: 14
+              arc_color: $c_cool
+            knob:
+              bg_opa: TRANSP
+            adjustable: false
+            widgets:
+              - label:
+                  id: water_text
+                  text: "--.-°"
+                  text_font: montserrat_36
+                  align: CENTER
+                  y: -6
+              - label:
+                  id: water_target_text
+                  text: "target --.-°"
+                  text_font: montserrat_12
+                  text_color: $c_dim
+                  align: CENTER
+                  y: 22
+
+        # Right column, x 176..312: four status icons on a 34 px grid (plain labels, not buttons)
+        - label: { id: heater_icon, text: "\U000F0238", text_font: mdi_28, text_color: $c_dim, x: 176, y: 16, width: 34, text_align: CENTER }
+        - label: { id: hp_icon,     text: "\U000F1A44", text_font: mdi_28, text_color: $c_dim, x: 210, y: 16, width: 34, text_align: CENTER }
+        - label: { id: circ_icon,   text: "\U000F006A", text_font: mdi_28, text_color: $c_dim, x: 244, y: 16, width: 34, text_align: CENTER }
+        - label: { id: wifi_icon,   text: "\U000F05AA", text_font: mdi_28, text_color: $c_alert, x: 278, y: 16, width: 34, text_align: CENTER }
+        - container: { x: 176, y: 54, width: 136, height: 1, bg_color: $c_tile, bg_opa: COVER, border_width: 0, radius: 0 }
+
+        # Weather: condition icon and outside temperature, centred together
+        - container:
+            x: 176
+            y: 60
+            width: 136
+            height: 44
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            layout:
+              type: FLEX
+              flex_flow: ROW
+              flex_align_main: CENTER
+              flex_align_cross: CENTER
+              pad_column: 10
+            widgets:
+              - label: { id: weather_icon, text: "\U000F0590", text_font: mdi_40, text_color: white }
+              - label: { id: outside_text, text: "--°", text_font: montserrat_32, text_color: white }
+
+        # The only buttons on this page
+        - button:
+            id: jets_button
+            styles: toggle_style
+            x: 174
+            y: 114
+            checkable: true
+            checked: { bg_color: $c_cool, bg_opa: COVER, border_color: $c_cool, text_color: black }
+            widgets:
+              - label: { text: "\U000F12E5", text_font: mdi_40, align: CENTER }
+            on_click:
+              - switch.toggle: balboa_jets
+        - button:
+            id: lights_button
+            styles: toggle_style
+            x: 248
+            y: 114
+            checkable: true
+            checked: { bg_color: $c_cool, bg_opa: COVER, border_color: $c_cool, text_color: black }
+            widgets:
+              - label: { text: "\U000F0335", text_font: mdi_40, align: CENTER }
+            on_click:
+              - light.toggle: balboa_lights
+
+    # ------------------------------------------------------------------ weather
+    - id: weather_page
+      bg_color: black
+      text_color: white
+      on_load:
+        - lvgl.label.update: { id: nav_overview_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_weather_icon, text_color: $c_cool }
+        - lvgl.label.update: { id: nav_spa_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_hp_icon, text_color: $c_dim }
+        - lvgl.widget.update: { id: nav_overview_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_weather_bar, hidden: false }
+        - lvgl.widget.update: { id: nav_spa_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_hp_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_bar, hidden: false }
+      widgets:
+        # Now: icon, temperature and condition name (weather_state / outside_temp),
+        # wind and humidity stacked on the right (update_wind_text / humidity)
+        # One row centred on y 34: icon 6..62, temperature 8..61, and a right aligned
+        # stack of condition name, wind and humidity (three 16 px lines, 6..71)
+        - label: { id: wx_now_icon, text: "\U000F0590", text_font: mdi_56, text_color: white, x: 12, y: 6 }
+        - label: { id: wx_now_temp, text: "--°", text_font: montserrat_48, x: 78, y: 8 }
+        - label: { id: wx_now_text, text: "--", text_font: montserrat_16, text_color: $c_dim, align: TOP_RIGHT, x: -12, y: 6, text_align: RIGHT }
+        - label: { id: wx_wind_text, text: "-- ${wind_unit}", text_font: montserrat_16, text_color: $c_dim, align: TOP_RIGHT, x: -12, y: 29, text_align: RIGHT }
+        - label: { id: wx_hum_text, text: "--% humidity", text_font: montserrat_16, text_color: $c_dim, align: TOP_RIGHT, x: -12, y: 52, text_align: RIGHT }
+        # Next six hours: columns of time, icon, temperature, rain chance (forecast_*)
+        - container:
+            x: 8
+            y: 88
+            width: 304
+            height: 90
+            radius: 8
+            bg_color: $c_tile
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 4
+            scrollbar_mode: "OFF"
+            layout:
+              type: FLEX
+              flex_flow: ROW
+              flex_align_main: SPACE_EVENLY
+              flex_align_cross: CENTER
+            widgets:
+              - container:
+                  width: 46
+                  height: 82
+                  pad_all: 0
+                  scrollbar_mode: "OFF"
+                  layout:
+                    type: FLEX
+                    flex_flow: COLUMN
+                    flex_align_main: SPACE_BETWEEN
+                    flex_align_cross: CENTER
+                  widgets:
+                    - label: { id: fc_time_0, text: "--:--", text_font: montserrat_12, text_color: $c_dim }
+                    - label: { id: fc_icon_0, text: "\U000F0590", text_font: mdi_28, text_color: $c_dim }
+                    - label: { id: fc_temp_0, text: "--°", text_font: montserrat_18 }
+                    - label: { id: fc_rain_0, text: " ", text_font: montserrat_12, text_color: $c_cool }
+              - container:
+                  width: 46
+                  height: 82
+                  pad_all: 0
+                  scrollbar_mode: "OFF"
+                  layout:
+                    type: FLEX
+                    flex_flow: COLUMN
+                    flex_align_main: SPACE_BETWEEN
+                    flex_align_cross: CENTER
+                  widgets:
+                    - label: { id: fc_time_1, text: "--:--", text_font: montserrat_12, text_color: $c_dim }
+                    - label: { id: fc_icon_1, text: "\U000F0590", text_font: mdi_28, text_color: $c_dim }
+                    - label: { id: fc_temp_1, text: "--°", text_font: montserrat_18 }
+                    - label: { id: fc_rain_1, text: " ", text_font: montserrat_12, text_color: $c_cool }
+              - container:
+                  width: 46
+                  height: 82
+                  pad_all: 0
+                  scrollbar_mode: "OFF"
+                  layout:
+                    type: FLEX
+                    flex_flow: COLUMN
+                    flex_align_main: SPACE_BETWEEN
+                    flex_align_cross: CENTER
+                  widgets:
+                    - label: { id: fc_time_2, text: "--:--", text_font: montserrat_12, text_color: $c_dim }
+                    - label: { id: fc_icon_2, text: "\U000F0590", text_font: mdi_28, text_color: $c_dim }
+                    - label: { id: fc_temp_2, text: "--°", text_font: montserrat_18 }
+                    - label: { id: fc_rain_2, text: " ", text_font: montserrat_12, text_color: $c_cool }
+              - container:
+                  width: 46
+                  height: 82
+                  pad_all: 0
+                  scrollbar_mode: "OFF"
+                  layout:
+                    type: FLEX
+                    flex_flow: COLUMN
+                    flex_align_main: SPACE_BETWEEN
+                    flex_align_cross: CENTER
+                  widgets:
+                    - label: { id: fc_time_3, text: "--:--", text_font: montserrat_12, text_color: $c_dim }
+                    - label: { id: fc_icon_3, text: "\U000F0590", text_font: mdi_28, text_color: $c_dim }
+                    - label: { id: fc_temp_3, text: "--°", text_font: montserrat_18 }
+                    - label: { id: fc_rain_3, text: " ", text_font: montserrat_12, text_color: $c_cool }
+              - container:
+                  width: 46
+                  height: 82
+                  pad_all: 0
+                  scrollbar_mode: "OFF"
+                  layout:
+                    type: FLEX
+                    flex_flow: COLUMN
+                    flex_align_main: SPACE_BETWEEN
+                    flex_align_cross: CENTER
+                  widgets:
+                    - label: { id: fc_time_4, text: "--:--", text_font: montserrat_12, text_color: $c_dim }
+                    - label: { id: fc_icon_4, text: "\U000F0590", text_font: mdi_28, text_color: $c_dim }
+                    - label: { id: fc_temp_4, text: "--°", text_font: montserrat_18 }
+                    - label: { id: fc_rain_4, text: " ", text_font: montserrat_12, text_color: $c_cool }
+              - container:
+                  width: 46
+                  height: 82
+                  pad_all: 0
+                  scrollbar_mode: "OFF"
+                  layout:
+                    type: FLEX
+                    flex_flow: COLUMN
+                    flex_align_main: SPACE_BETWEEN
+                    flex_align_cross: CENTER
+                  widgets:
+                    - label: { id: fc_time_5, text: "--:--", text_font: montserrat_12, text_color: $c_dim }
+                    - label: { id: fc_icon_5, text: "\U000F0590", text_font: mdi_28, text_color: $c_dim }
+                    - label: { id: fc_temp_5, text: "--°", text_font: montserrat_18 }
+                    - label: { id: fc_rain_5, text: " ", text_font: montserrat_12, text_color: $c_cool }
+
+    # ------------------------------------------------------------------ spa heater
+    - id: spa_page
+      bg_color: black
+      text_color: white
+      on_load:
+        - lvgl.label.update: { id: nav_overview_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_weather_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_spa_icon, text_color: $c_heat }
+        - lvgl.label.update: { id: nav_hp_icon, text_color: $c_dim }
+        - lvgl.widget.update: { id: nav_overview_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_weather_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_spa_bar, hidden: false }
+        - lvgl.widget.update: { id: nav_hp_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_bar, hidden: false }
+      widgets:
+        - button:
+            styles: big_button
+            x: 8
+            y: 12
+            widgets:
+              - label: { text: "\U000F0140", text_font: mdi_40, align: CENTER }
+            on_click:
+              - climate.control:
+                  id: balboa_spa_climate
+                  target_temperature: !lambda return id(balboa_spa_climate).target_temperature - 0.5f;
+        - button:
+            styles: big_button
+            x: 242
+            y: 12
+            widgets:
+              - label: { text: "\U000F0143", text_font: mdi_40, align: CENTER }
+            on_click:
+              - climate.control:
+                  id: balboa_spa_climate
+                  target_temperature: !lambda return id(balboa_spa_climate).target_temperature + 0.5f;
+        - label: { text: "SPA HEATER", text_font: montserrat_20, text_color: $c_dim, align: TOP_MID, y: 14 }
+        - label: { id: spa_target_text, text: "--.-°", text_font: montserrat_48, align: TOP_MID, y: 42 }
+        - label: { id: spa_current_text, text: "now --.-°", text_font: montserrat_20, text_color: $c_dim, align: TOP_MID, y: 98 }
+        # status strip
+        - container:
+            x: 8
+            y: 132
+            width: 304
+            height: 44
+            radius: 8
+            bg_color: $c_tile
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 8
+            pad_left: 12
+            pad_right: 12
+            scrollbar_mode: "OFF"
+            layout:
+              type: FLEX
+              flex_flow: ROW
+              flex_align_main: SPACE_BETWEEN
+              flex_align_cross: CENTER
+            widgets:
+              - label: { text: "\U000F0238", text_font: mdi_28, text_color: $c_heat }
+              - label: { id: spa_state_text, text: "idle", text_font: montserrat_20, text_color: white }
+              - label: { id: spa_range_text, text: "LOW", text_font: montserrat_20, text_color: white }
+
+    # ------------------------------------------------------------------ heat pump
+    - id: hp_page
+      bg_color: black
+      text_color: white
+      on_load:
+        - lvgl.label.update: { id: nav_overview_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_weather_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_spa_icon, text_color: $c_dim }
+        - lvgl.label.update: { id: nav_hp_icon, text_color: $c_heat }
+        - lvgl.widget.update: { id: nav_overview_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_weather_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_spa_bar, hidden: true }
+        - lvgl.widget.update: { id: nav_hp_bar, hidden: false }
+        - lvgl.widget.update: { id: nav_bar, hidden: false }
+      widgets:
+        - button:
+            styles: big_button
+            x: 8
+            y: 12
+            widgets:
+              - label: { text: "\U000F0140", text_font: mdi_40, align: CENTER }
+            on_click:
+              - homeassistant.action:
+                  action: climate.set_temperature
+                  data:
+                    entity_id: $heatpump_entity
+                    temperature: !lambda return to_string(id(hp_target).state - 1);
+        - button:
+            styles: big_button
+            x: 242
+            y: 12
+            widgets:
+              - label: { text: "\U000F0143", text_font: mdi_40, align: CENTER }
+            on_click:
+              - homeassistant.action:
+                  action: climate.set_temperature
+                  data:
+                    entity_id: $heatpump_entity
+                    temperature: !lambda return to_string(id(hp_target).state + 1);
+        - label: { text: "HEAT PUMP", text_font: montserrat_20, text_color: $c_dim, align: TOP_MID, y: 14 }
+        - label: { id: hp_target_text, text: "--°", text_font: montserrat_48, align: TOP_MID, y: 42 }
+        - label: { id: hp_current_text, text: "now --°", text_font: montserrat_20, text_color: $c_dim, align: TOP_MID, y: 98 }
+        - container:
+            x: 8
+            y: 132
+            width: 304
+            height: 44
+            radius: 8
+            bg_color: $c_tile
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 5
+            pad_left: 12
+            pad_right: 12
+            scrollbar_mode: "OFF"
+            layout:
+              type: FLEX
+              flex_flow: ROW
+              flex_align_main: SPACE_BETWEEN
+              flex_align_cross: CENTER
+            widgets:
+              - label: { text: "\U000F1A44", text_font: mdi_28, text_color: $c_heat }
+              - label: { id: hp_state_text, text: "off", text_font: montserrat_20, text_color: white }
+              - button:
+                  id: hp_power_button
+                  width: 44
+                  height: 34
+                  radius: 8
+                  bg_color: $c_bar
+                  bg_opa: COVER
+                  border_width: 0
+                  shadow_width: 0
+                  text_color: $c_dim
+                  checkable: true
+                  checked: { bg_color: $c_heat, text_color: white }
+                  widgets:
+                    - label: { text: "\U000F0425", text_font: mdi_28, align: CENTER }
+                  on_click:
+                    - if:
+                        condition:
+                          lambda: return id(hp_state).state == "heat";
+                        then:
+                          - homeassistant.action:
+                              action: climate.turn_off
+                              data: { entity_id: $heatpump_entity }
+                        else:
+                          - homeassistant.action:
+                              action: climate.turn_on
+                              data: { entity_id: $heatpump_entity }
+
+    # ------------------------------------------------------------------ lock
+    # Shown when the spa is parked and the screen has been idle. Dry weather: a tap
+    # unlocks. Rain or snow: only a long press unlocks, so drops on the glass do nothing.
+    - id: lock_page
+      bg_color: black
+      text_color: white
+      widgets:
+        - button:
+            id: unlock_button
+            width: 200
+            height: 120
+            align: CENTER
+            radius: 16
+            bg_color: $c_tile
+            bg_opa: COVER
+            border_width: 0
+            shadow_width: 0
+            text_color: $c_dim
+            widgets:
+              - label: { text: "\U000F033E", text_font: mdi_40, align: CENTER, y: -14 }
+              - label: { id: unlock_hint, text: "tap to unlock", text_font: montserrat_14, align: BOTTOM_MID, y: -10 }
+            on_long_press:
+              - script.execute: screen_unlock
+            on_short_click:
+              - if:
+                  condition:
+                    lambda: |-
+                      auto w = id(weather_state).state;
+                      return w != "rainy" && w != "pouring" && w != "snowy" && w != "snowy-rainy";
+                  then:
+                    - script.execute: screen_unlock
+                  else:
+                    - lvgl.label.update: { id: unlock_hint, text: "hold to unlock" }
